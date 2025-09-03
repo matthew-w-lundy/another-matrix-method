@@ -149,6 +149,13 @@ yoff_bins = [xyoff_map_nbins for logE in range(0,logE_nbins)]
 xvar_bins = [xyvar_map_nbins for logE in range(0,logE_nbins)]
 yvar_bins = [xyvar_map_nbins for logE in range(0,logE_nbins)]
 
+#VEGAS Specific Configuration details
+
+windowSizeForNoise = 7
+
+
+
+
 if 'nbin0' in bin_tag:
     for logE in range(0,logE_nbins):
         xoff_bins[logE] = 9
@@ -260,7 +267,7 @@ def GetRunElevAzim(smi_input,run_number):
     if not os.path.exists(rootfile_name):
         print (f'file does not exist.')
         return 0, 0
-    
+
     InputFile = ROOT.TFile(rootfile_name)
     TreeName = f'run_{run_number}/stereo/pointingDataReduced'
     TelTree = InputFile.Get(TreeName)
@@ -524,17 +531,17 @@ class MyArray3D:
         key_idx_x = key_idx[0]
         key_idx_y = key_idx[1]
         key_idx_z = key_idx[2]
-        if key_idx_x==-1: 
+        if key_idx_x==-1:
             key_idx_x = 0
             weight = 0.
-        if key_idx_y==-1: 
+        if key_idx_y==-1:
             key_idx_y = 0
             weight = 0.
-        if key_idx_z==-1: 
+        if key_idx_z==-1:
             key_idx_z = 0
             weight = 0.
         self.waxis[key_idx_x,key_idx_y,key_idx_z] += 1.*weight
-    
+
     def divide(self, add_array):
         for idx_x in range(0,len(self.xaxis)-1):
             for idx_y in range(0,len(self.yaxis)-1):
@@ -552,17 +559,17 @@ class MyArray3D:
         key_idx_x = key_idx[0]
         key_idx_y = key_idx[1]
         key_idx_z = key_idx[2]
-        if key_idx_x==-1: 
+        if key_idx_x==-1:
             return 0.
-        if key_idx_y==-1: 
+        if key_idx_y==-1:
             return 0.
-        if key_idx_z==-1: 
+        if key_idx_z==-1:
             return 0.
-        #if key_idx_x==len(self.xaxis): 
+        #if key_idx_x==len(self.xaxis):
         #    key_idx_x = len(self.xaxis)-2
-        #if key_idx_y==len(self.yaxis): 
+        #if key_idx_y==len(self.yaxis):
         #    key_idx_y = len(self.yaxis)-2
-        #if key_idx_z==len(self.zaxis): 
+        #if key_idx_z==len(self.zaxis):
         #    key_idx_z = len(self.zaxis)-2
         return self.waxis[key_idx_x,key_idx_y,key_idx_z]
 
@@ -607,11 +614,11 @@ class MyArray1D:
 
     def fill(self, value_x, weight=1.):
         key_idx = self.get_bin(value_x)
-        if key_idx==-1: 
+        if key_idx==-1:
             key_idx = 0
             weight = 0.
         self.waxis[key_idx] += 1.*weight
-    
+
     def divide(self, add_array):
         for idx_x in range(0,len(self.xaxis)-1):
             if add_array.waxis[idx_x]==0.:
@@ -624,9 +631,9 @@ class MyArray1D:
 
     def get_bin_content(self, value_x):
         key_idx = self.get_bin(value_x)
-        if key_idx==-1: 
+        if key_idx==-1:
             key_idx = 0
-        if key_idx==len(self.xaxis): 
+        if key_idx==len(self.xaxis):
             key_idx = len(self.xaxis)-2
         return self.waxis[key_idx]
 
@@ -676,7 +683,20 @@ def ApplyTimeCuts(evt_time, list_timecuts):
     return pass_cut
 
 def CalculateExposure(start_time, end_time, list_timecuts):
+    """Calculate the duration of a run in seconds
 
+
+    Parameters
+    ----------
+        start_time (floatt)                     - Time at start of run (in seconds)
+        end_time (floatt)                       - Time at end of run (in seconds)
+        list_timecuts (list)                    - List of cut times  (in seconds)
+
+
+    Returns
+    ----------
+        exposure (float)                        - total expousre (in seconds)
+    """
     total_time = end_time - start_time
     removed_time = 0.
     for cut in range(0,len(list_timecuts)):
@@ -692,8 +712,8 @@ def GetBrightStars(tele_point_ra, tele_point_dec):
     bright_stars_coord = []
     inputFile = open(f'{smi_aux}/Hipparcos_MAG8_1997.dat')
     for line in inputFile:
-        if '#' in line: continue 
-        if '*' in line: continue 
+        if '#' in line: continue
+        if '*' in line: continue
         if line=='': continue
         line_split = line.split()
         if len(line_split)!=5: continue
@@ -928,7 +948,60 @@ def convert_xyoff_vector1d_to_map3d(xyoff_map_1d):
 
     return xyoff_map
 
-def build_big_camera_matrix(source_name,src_ra,src_dec,smi_input,runlist,max_runs=1e10,is_bkgd=True,specific_run=0):
+def decodeVEGASConfigMask(mask=15):
+    """Decode the telescope config mask to find the telescpes in the array"""
+    tels = []
+    if mask >= 8:
+        tels.append(4)
+        mask -= 8
+    if mask >= 4:
+        tels.append(3)
+        mask -= 4
+    if mask >= 2:
+        tels.append(2)
+        mask -= 2
+    if mask >= 1:
+        tels.append(1)
+        mask -= 1
+    return sorted(tels)
+
+
+
+
+def build_big_camera_matrix(source_name,src_ra,src_dec,smi_input,runlist,max_runs=1e10,is_bkgd=True,specific_run=0,package='ED',reco='GEO'):
+    """Read in the files and construct the matrix used.
+
+    Parameters
+    ----------
+        source_name (string)                    - Name of the target
+        src_ra (float)                          - Right Ascencion of the source
+        src_dec (float)                         - Declination of the source
+        smi_input (string)                      - Path to the files
+        runlist (list)                          - list of ints of run ids
+        max_runs (float)                        - maximum number of runs to process
+        is_bkgd (bool)                          -
+        specific_run (int)                      -
+        package (string)                        - Which package is used for the analysis (ED/VEGAS)
+        reco (string)                           - Reconstruction method used (only support for VEGAS: GEO/ITM)
+
+
+    Returns
+    ----------
+        big_elevation (float)                   - Average Elevation
+        big_exposure_time (list)                - List of exposures
+        big_matrix_fullspec (array)             - Array of components (1 row for each run)
+        big_mask_matrix_fullspec (array)        - Array of Masked values (1 row for each run)
+    """
+    if (reco != 'GEO') & (package != 'VEGAS'): # not good should make exception
+        print(f'You input reco = {reco}, but are not using VEGAS!')
+        exit
+
+
+
+    if package == 'VEGAS':
+        print('Importing VEGAS')
+        ROOT.gSystem.Load('libVEGAScommon')
+        ROOT.gSystem.Load('libVEGASstage6')
 
     big_matrix_fullspec = []
     big_mask_matrix_fullspec = []
@@ -943,138 +1016,275 @@ def build_big_camera_matrix(source_name,src_ra,src_dec,smi_input,runlist,max_run
     for run_number in runlist:
 
         print (f'{run_count}/{len(runlist)} runs saved.')
-    
-        rootfile_name = f'{smi_input}/{run_number}.anasum.root'
+        if package == 'ED':
+            rootfile_name = f'{smi_input}/{run_number}.anasum.root'
+        else:
+            rootfile_name = f'{smi_input}/{run_number}.stage4.root'
+
         print (rootfile_name)
         if not os.path.exists(rootfile_name):
             print (f'file does not exist.')
             continue
         if specific_run!=0:
-            if specific_run!=run_number: 
+            if specific_run!=run_number:
                 continue
         run_count += 1
-    
+
         xyvar_map = []
         xyvar_mask_map = []
         xyoff_map = []
         xyoff_mask_map = []
         for logE in range(0,logE_nbins):
-            end_x = Normalized_MSCL_cut[len(Normalized_MSCL_cut)-1]
-            end_y = Normalized_MSCW_cut[len(Normalized_MSCW_cut)-1]
+            end_x = Normalized_MSCL_cut[len(Normalized_MSCL_cut)-1] # Matthew - Need to modify to allow for VEGAS Cuts
+            end_y = Normalized_MSCW_cut[len(Normalized_MSCW_cut)-1] # Matthew - Need to modify to allow for VEGAS Cuts
             xyvar_map += [MyArray3D(x_bins=xvar_bins[logE],start_x=-1.,end_x=end_x,y_bins=yvar_bins[logE],start_y=-1.,end_y=end_y,z_bins=1,start_z=0.,end_z=1.)]
             xyvar_mask_map += [MyArray3D(x_bins=xvar_bins[logE],start_x=-1.,end_x=end_x,y_bins=yvar_bins[logE],start_y=-1.,end_y=end_y,z_bins=1,start_z=0.,end_z=1.)]
             xyoff_map += [MyArray3D(x_bins=xoff_bins[logE],start_x=xoff_start,end_x=xoff_end,y_bins=yoff_bins[logE],start_y=yoff_start,end_y=yoff_end,z_bins=gcut_bins,start_z=gcut_start,end_z=gcut_end)]
             xyoff_mask_map += [MyArray3D(x_bins=xoff_bins[logE],start_x=xoff_start,end_x=xoff_end,y_bins=yoff_bins[logE],start_y=yoff_start,end_y=yoff_end,z_bins=gcut_bins,start_z=gcut_start,end_z=gcut_end)]
-    
-        InputFile = ROOT.TFile(rootfile_name)
 
-        TreeName = f'run_{run_number}/stereo/pointingDataReduced'
-        TelTree = InputFile.Get(TreeName)
-        TelTree.GetEntry(int(float(TelTree.GetEntries())/2.))
-        TelRAJ2000 = TelTree.TelRAJ2000*180./np.pi
-        TelDecJ2000 = TelTree.TelDecJ2000*180./np.pi
-        TelElevation = TelTree.TelElevation
-        TelAzimuth = TelTree.TelAzimuth
+        if package == 'ED':
+            InputFile = ROOT.TFile(rootfile_name)
+            TreeName = f'run_{run_number}/stereo/pointingDataReduced'
+            TelTree = InputFile.Get(TreeName)
+            TelTree.GetEntry(int(float(TelTree.GetEntries())/2.))
+            TelRAJ2000 = TelTree.TelRAJ2000*180./np.pi #Does not get the average gets one value
+            TelDecJ2000 = TelTree.TelDecJ2000*180./np.pi
+            TelElevation = TelTree.TelElevation
+            TelAzimuth = TelTree.TelAzimuth
+
+        if package == 'VEGAS':
+            InputFile = ROOT.VARootIO(rootfile_name, True)
+
+            TelTree = InputFile.loadTheShowerEventTree()
+            total_entries = TelTree.GetEntries()
+            if total_entries==0: continue
+
+            TelTree.GetEntry(int(float(total_entries)/2.))
+            if reco == 'GEO':
+                TelBranch=TelTree.S
+            elif reco == 'ITM':
+                TelBranch=TelTree.M3D
+
+            TelRAJ2000 = np.rad2deg(TelBranch.fArrayTrackingRA_J2000_Rad)
+            TelDecJ2000 =  np.rad2deg(TelBranch.fArrayTrackingDec_J2000_Rad)
+            TelElevation =  TelBranch.fArrayTrackingElevation_Deg
+            TelAzimuth = TelBranch.fArrayTrackingAzimuth_Deg
+
         bright_star_coord = GetBrightStars(TelRAJ2000,TelDecJ2000)
         gamma_source_coord = GetGammaSources(TelRAJ2000,TelDecJ2000)
-        
         if not is_bkgd:
             if TelElevation<run_elev_cut: continue
 
-        list_timecuts = GetRunTimecuts(int(run_number))
+        list_timecuts = GetRunTimecuts(int(run_number)) #Missing File, should this be DB? -ML
         print (f"run_number = {run_number}, list_timecuts = {list_timecuts}")
+        if package == 'ED':
+            TreeName = f'run_{run_number}/stereo/DL3EventTree'
+            EvtTree = InputFile.Get(TreeName)
+            total_entries = EvtTree.GetEntries()
+            if total_entries==0: continue
 
-        TreeName = f'run_{run_number}/stereo/DL3EventTree'
-        EvtTree = InputFile.Get(TreeName)
-        total_entries = EvtTree.GetEntries()
-        #print (f'total_entries = {total_entries}')
-        if total_entries==0: continue
+            if not is_bkgd:
+                avg_MeanPedvar = 0.
+                for entry in range(0,total_entries):
+                    EvtTree.GetEntry(entry)
+                    avg_MeanPedvar += EvtTree.MeanPedvar
+                avg_MeanPedvar = avg_MeanPedvar/float(total_entries)
+                if avg_MeanPedvar>max_MeanPedvar_cut: continue
+                if avg_MeanPedvar<min_MeanPedvar_cut: continue
 
-        if not is_bkgd:
-            avg_MeanPedvar = 0.
+            EvtTree.GetEntry(0)
+            Time0 = EvtTree.timeOfDay
+            EvtTree.GetEntry(total_entries-1)
+            Time1 = EvtTree.timeOfDay
+            exposure = CalculateExposure(Time0, Time1, list_timecuts)
+            big_exposure_time += [exposure]
+            big_elevation += TelElevation * exposure
             for entry in range(0,total_entries):
                 EvtTree.GetEntry(entry)
-                avg_MeanPedvar += EvtTree.MeanPedvar
-            avg_MeanPedvar = avg_MeanPedvar/float(total_entries)
-            if avg_MeanPedvar>max_MeanPedvar_cut: continue
-            if avg_MeanPedvar<min_MeanPedvar_cut: continue
+                RA = EvtTree.RA
+                DEC = EvtTree.DEC
+                Xoff = EvtTree.Xoff
+                Yoff = EvtTree.Yoff
+                Xderot = EvtTree.Xderot
+                Yderot = EvtTree.Yderot
+                Energy = EvtTree.Energy
+                NImages = EvtTree.NImages
+                EmissionHeight = EvtTree.EmissionHeight
+                MeanPedvar = EvtTree.MeanPedvar
+                Xcore = EvtTree.XCore
+                Ycore = EvtTree.YCore
+                Time = EvtTree.timeOfDay
+                Roff = pow(Xoff*Xoff+Yoff*Yoff,0.5)
+                Rcore = pow(Xcore*Xcore+Ycore*Ycore,0.5)
+                logE = logE_axis.get_bin(np.log10(Energy))
 
-        EvtTree.GetEntry(0)
-        Time0 = EvtTree.timeOfDay
-        EvtTree.GetEntry(total_entries-1)
-        Time1 = EvtTree.timeOfDay
-        exposure = CalculateExposure(Time0, Time1, list_timecuts)
-        big_exposure_time += [exposure]
-        big_elevation += TelElevation * exposure
-        for entry in range(0,total_entries):
-            EvtTree.GetEntry(entry)
-            RA = EvtTree.RA
-            DEC = EvtTree.DEC
-            Xoff = EvtTree.Xoff
-            Yoff = EvtTree.Yoff
-            Xderot = EvtTree.Xderot
-            Yderot = EvtTree.Yderot
-            Energy = EvtTree.Energy
-            NImages = EvtTree.NImages
-            EmissionHeight = EvtTree.EmissionHeight
-            MeanPedvar = EvtTree.MeanPedvar
-            Xcore = EvtTree.XCore
-            Ycore = EvtTree.YCore
-            Time = EvtTree.timeOfDay
-            Roff = pow(Xoff*Xoff+Yoff*Yoff,0.5)
-            Rcore = pow(Xcore*Xcore+Ycore*Ycore,0.5)
-            logE = logE_axis.get_bin(np.log10(Energy))
+                if NImages<2: continue
+                if not ApplyTimeCuts(Time-Time0,list_timecuts): continue
+                if logE<0: continue
+                if logE>=len(xyoff_map): continue
+                if Energy<min_Energy_cut: continue
+                if Energy>max_Energy_cut: continue
 
-            if NImages<2: continue
-            if not ApplyTimeCuts(Time-Time0,list_timecuts): continue
-            if logE<0: continue
-            if logE>=len(xyoff_map): continue
-            if Energy<min_Energy_cut: continue
-            if Energy>max_Energy_cut: continue
+                MSCW = EvtTree.MSCW/MSCW_cut[logE]
+                MSCL = EvtTree.MSCL/MSCL_cut[logE]
+                GammaCut = EventGammaCut(MSCL,MSCW)
+                if GammaCut>float(gcut_end): continue
 
-            MSCW = EvtTree.MSCW/MSCW_cut[logE]
-            MSCL = EvtTree.MSCL/MSCL_cut[logE]
-            GammaCut = EventGammaCut(MSCL,MSCW)
-            if GammaCut>float(gcut_end): continue
+                if NImages<min_NImages: continue
+                if EmissionHeight>max_EmissionHeight_cut: continue
+                if EmissionHeight<min_EmissionHeight_cut: continue
+                #if MeanPedvar>max_MeanPedvar_cut: continue
+                #if MeanPedvar<min_MeanPedvar_cut: continue
+                if Roff>max_Roff: continue
+                if Rcore>max_Rcore: continue
+                if Rcore<min_Rcore: continue
 
-            if NImages<min_NImages: continue
-            if EmissionHeight>max_EmissionHeight_cut: continue
-            if EmissionHeight<min_EmissionHeight_cut: continue
-            #if MeanPedvar>max_MeanPedvar_cut: continue
-            #if MeanPedvar<min_MeanPedvar_cut: continue
-            if Roff>max_Roff: continue
-            if Rcore>max_Rcore: continue
-            if Rcore<min_Rcore: continue
+                Xsky = TelRAJ2000 + Xderot
+                Ysky = TelDecJ2000 + Yderot
 
-            Xsky = TelRAJ2000 + Xderot
-            Ysky = TelDecJ2000 + Yderot
+                found_bright_star = CoincideWithBrightStars(Xsky, Ysky, bright_star_coord)
+                found_gamma_source = CoincideWithBrightStars(Xsky, Ysky, gamma_source_coord)
 
-            found_bright_star = CoincideWithBrightStars(Xsky, Ysky, bright_star_coord)
-            found_gamma_source = CoincideWithBrightStars(Xsky, Ysky, gamma_source_coord)
+                #mirror_Xsky = TelRAJ2000 - Xderot
+                #mirror_Ysky = TelDecJ2000 - Yderot
+                #found_mirror_star = CoincideWithBrightStars(mirror_Xsky, mirror_Ysky, bright_star_coord)
+                #found_mirror_gamma_source = CoincideWithBrightStars(mirror_Xsky, mirror_Ysky, gamma_source_coord)
 
-            #mirror_Xsky = TelRAJ2000 - Xderot
-            #mirror_Ysky = TelDecJ2000 - Yderot
-            #found_mirror_star = CoincideWithBrightStars(mirror_Xsky, mirror_Ysky, bright_star_coord)
-            #found_mirror_gamma_source = CoincideWithBrightStars(mirror_Xsky, mirror_Ysky, gamma_source_coord)
-
-            if is_bkgd:
-                if found_bright_star:
-                    xyoff_mask_map[logE].fill(Xoff,Yoff,0.5)
-                if found_gamma_source:
-                    xyoff_mask_map[logE].fill(Xoff,Yoff,0.5)
-            else:
-                found_roi = CoincideWithRegionOfInterest(Xsky, Ysky, roi_ra, roi_dec, roi_r)
-                if found_roi:
-                    xyoff_mask_map[logE].fill(Xoff,Yoff,GammaCut)
+                if is_bkgd:
+                    if found_bright_star:
+                        xyoff_mask_map[logE].fill(Xoff,Yoff,0.5)
+                    if found_gamma_source:
+                        xyoff_mask_map[logE].fill(Xoff,Yoff,0.5)
+                else:
+                    found_roi = CoincideWithRegionOfInterest(Xsky, Ysky, roi_ra, roi_dec, roi_r)
+                    if found_roi:
+                        xyoff_mask_map[logE].fill(Xoff,Yoff,GammaCut)
 
 
-            xyoff_map[logE].fill(Xoff,Yoff,GammaCut)
+                xyoff_map[logE].fill(Xoff,Yoff,GammaCut)
 
-            xyvar_map[logE].fill(MSCL,MSCW,0.5)
-            if GammaCut<1.:
-                xyvar_mask_map[logE].fill(MSCL,MSCW,0.5)
+                xyvar_map[logE].fill(MSCL,MSCW,0.5)
+                if GammaCut<1.:
+                    xyvar_mask_map[logE].fill(MSCL,MSCW,0.5)
+
+        if package == 'VEGAS':
+            runHeader = InputFile.loadTheRunHeader()
+            qStatsData = InputFile.loadTheQStatsData()
+            pixelData = InputFile.loadThePixelStatusData()
+            arrayInfo = InputFile.loadTheArrayInfo()
 
 
+            #VEGAS does not store the noise, it needs to be calculated
+            #this could be changed to recover the missing events like V2DL3
+
+            if not is_bkgd:
+                avg_MeanPedvar = 0
+                for entry in range(0,total_entries):
+                    TelTree.GetEntry(entry)
+                    if reco == 'GEO':
+                        TelBranch=TelTree.S
+                    elif reco == 'ITM':
+                        TelBranch=TelTree.M3D
+                    avNoise=0
+                    for telID in decodeVEGASConfigMask(runHeader.fRunInfo.fConfigMask):
+                        avNoise += qStatsData.getCameraAverageTraceVar(
+                        telID - 1, windowSizeForNoise, reco.fTime, pixelData, arrayInfo
+                    )
+                    nTels += 1
+
+                    avNoise /= nTels
+
+                    avg_MeanPedvar += avNoise
+                avg_MeanPedvar = avg_MeanPedvar/float(total_entries)
+                if avg_MeanPedvar>max_MeanPedvar_cut: continue
+                if avg_MeanPedvar<min_MeanPedvar_cut: continue
+
+            Time0 = runHeader.getStartTime()
+            Time0=float(Time0.getDayNS()) / 1e9
+
+            Time1 = runHeader.getEndTime()
+            Time1=float(Time1.getDayNS()) / 1e9
+
+
+            exposure = CalculateExposure(Time0, Time1, list_timecuts)  #make sure this is all in seconds -ML
+            big_exposure_time += [exposure]
+            big_elevation += TelElevation * exposure
+            for entry in range(0,total_entries):
+                TelTree.GetEntry(entry)
+                if reco == 'GEO':
+                    TelBranch=TelTree.S
+                elif reco == 'ITM':
+                    TelBranch=TelTree.M3D
+                RA = np.rad2deg(TelBranch.fDirectionRA_J2000_Rad)
+                DEC = np.rad2deg(TelBranch.fDirectionDec_J2000_Rad)
+                Xoff = TelBranch.fDirectionXCamPlane_Deg
+                Yoff = TelBranch.fDirectionYCamPlane_Deg
+                #Xderot = EvtTree.Xderot # not in VEGAS
+                #Yderot = EvtTree.Yderot # not in VEGAS
+                Energy = TelBranch.fEnergy_GeV/1000 # GeV -> TeV
+                NImages = TelBranch.fImages#may be array?
+                EmissionHeight = TelBranch.fAccurateShowerMaxHeight_KM
+                #MeanPedvar = EvtTree.MeanPedvar not used and we don't have in VEGAS
+                Xcore = TelBranch.fCoreXEastGroundPlane_M
+                Ycore = TelBranch.fCoreYNorthGroundPlane_M
+                Time = TelBranch.fTime.getDayNS()/1e9
+                Roff = pow(Xoff*Xoff+Yoff*Yoff,0.5)
+                Rcore = pow(Xcore*Xcore+Ycore*Ycore,0.5)
+                logE = logE_axis.get_bin(np.log10(Energy))
+
+                if NImages<2: continue
+                if not ApplyTimeCuts(Time-Time0,list_timecuts): continue
+                if logE<0: continue
+                if logE>=len(xyoff_map): continue
+                if Energy<min_Energy_cut: continue
+                if Energy>max_Energy_cut: continue
+
+                MSCW = TelBranch.fMSW/MSCW_cut[logE]
+                MSCL = TelBranch.fMSL/MSCL_cut[logE]
+                GammaCut = EventGammaCut(MSCL,MSCW)
+                if GammaCut>float(gcut_end): continue
+
+                if NImages<min_NImages: continue
+                if EmissionHeight>max_EmissionHeight_cut: continue
+                if EmissionHeight<min_EmissionHeight_cut: continue
+                #if MeanPedvar>max_MeanPedvar_cut: continue
+                #if MeanPedvar<min_MeanPedvar_cut: continue
+                if Roff>max_Roff: continue
+                if Rcore>max_Rcore: continue
+                if Rcore<min_Rcore: continue
+
+
+                #Xsky = TelRAJ2000 + Xderot old ED way just going to Pass RA/Dec
+                #Ysky = TelDecJ2000 + Yderot old ED way just going to Pass RA/Dec
+
+                found_bright_star = CoincideWithBrightStars(RA, DEC, bright_star_coord)
+                found_gamma_source = CoincideWithBrightStars(RA, DEC, gamma_source_coord)
+
+                #mirror_Xsky = TelRAJ2000 - Xderot
+                #mirror_Ysky = TelDecJ2000 - Yderot
+                #found_mirror_star = CoincideWithBrightStars(mirror_Xsky, mirror_Ysky, bright_star_coord)
+                #found_mirror_gamma_source = CoincideWithBrightStars(mirror_Xsky, mirror_Ysky, gamma_source_coord)
+
+                if is_bkgd:
+                    if found_bright_star:
+                        xyoff_mask_map[logE].fill(Xoff,Yoff,0.5)
+                    if found_gamma_source:
+                        xyoff_mask_map[logE].fill(Xoff,Yoff,0.5)
+                else:
+                    found_roi = CoincideWithRegionOfInterest(Xsky, Ysky, roi_ra, roi_dec, roi_r)
+                    if found_roi:
+                        xyoff_mask_map[logE].fill(Xoff,Yoff,GammaCut)
+
+
+                xyoff_map[logE].fill(Xoff,Yoff,GammaCut)
+
+                xyvar_map[logE].fill(MSCL,MSCW,0.5)
+                if GammaCut<1.:
+                    xyvar_mask_map[logE].fill(MSCL,MSCW,0.5)
+
+
+
+        # Finding the location to fill
         if is_bkgd:
             for logE in range(0,logE_nbins):
                 for gcut in range(0,1):
@@ -1084,13 +1294,15 @@ def build_big_camera_matrix(source_name,src_ra,src_dec,smi_input,runlist,max_run
                                 bin_coord = xyoff_mask_map[logE].get_bin_center(idx_x,idx_y,gcut)
                                 bin_idx = xyoff_mask_map[logE].get_bin(-1.*bin_coord[0],-1.*bin_coord[1],bin_coord[2])
                                 xyoff_map[logE].waxis[idx_x,idx_y,gcut] = xyoff_map[logE].waxis[bin_idx[0],bin_idx[1],bin_idx[2]]
-    
+        # Converting and adding to map
         xyoff_map_1d = convert_multivar_map3d_to_vector1d(xyoff_map, xyvar_map)
         xyoff_mask_map_1d = convert_multivar_map3d_to_vector1d(xyoff_mask_map, xyvar_mask_map)
         big_matrix_fullspec += [xyoff_map_1d]
         big_mask_matrix_fullspec += [xyoff_mask_map_1d]
-
-        InputFile.Close()
+        if package == 'ED':
+            InputFile.Close()
+        elif package == 'VEGAS':
+            InputFile.closeTheRootFile()
         if run_count==max_runs: break
 
     if np.sum(np.array(big_exposure_time))>0.:
@@ -1340,7 +1552,7 @@ def HMS2deg(ra='', dec=''):
         if str(H)[0] == '-':
             rs, H = -1, abs(H)
         deg = (H*15) + (M/4) + (S/240)
-        RA = '{0}'.format(deg*rs)           
+        RA = '{0}'.format(deg*rs)
     if ra and dec:
         return (RA, DEC)
     else:
@@ -1451,7 +1663,7 @@ def ReadFermiHighEnergyCatalog():
     hdu_list = fits.open(filename)
 
     # point sources
-    table_index = 1 
+    table_index = 1
     mytable = Table.read(filename, hdu=table_index)
     for entry in range(0,len(mytable)):
         Source_Name = mytable[entry]['Source_Name']
@@ -1462,7 +1674,7 @@ def ReadFermiHighEnergyCatalog():
         source_dec += [DEJ2000]
 
     # extended sources
-    table_index = 2 
+    table_index = 2
     mytable = Table.read(filename, hdu=table_index)
     for entry in range(0,len(mytable)):
         Source_Name = mytable[entry]['Source_Name']
@@ -1513,15 +1725,15 @@ def ReadFermiCatelog():
                     target_dec = line.split(' ')[block].split('"')[1]
         if 'source>' in line:
             keep_source = True
-            if target_ra=='': 
+            if target_ra=='':
                 keep_source = False
-            #if target_type=='PointSource': 
+            #if target_type=='PointSource':
             #    keep_source = False
-            if target_ts=='': 
+            if target_ts=='':
                 keep_source = False
-            elif float(target_ts)<100.: 
+            elif float(target_ts)<100.:
                 keep_source = False
-            if not keep_source: 
+            if not keep_source:
                 target_ts = ''
                 target_name = ''
                 target_type = ''
@@ -1719,7 +1931,7 @@ def PlotCountProjection(fig,label_z,logE_min,logE_max,hist_map_data,hist_map_bkg
     ymin = hist_map.yaxis.min()
     ymax = hist_map.yaxis.max()
 
-    other_stars, other_star_type, other_star_coord = GetGammaSourceInfo() 
+    other_stars, other_star_type, other_star_coord = GetGammaSourceInfo()
 
     if coordinate_type == 'galactic':
         for star in range(0,len(other_stars)):
@@ -1784,7 +1996,7 @@ def PlotCountProjection(fig,label_z,logE_min,logE_max,hist_map_data,hist_map_bkg
 
             for br in range(0,len(x_proj_axis.xaxis)-1):
                 keep_event = False
-                if abs(bin_ra-x_proj_axis.xaxis[br])<=x_pix_size and abs(bin_ra-x_proj_axis.xaxis[br+1])<=x_pix_size: 
+                if abs(bin_ra-x_proj_axis.xaxis[br])<=x_pix_size and abs(bin_ra-x_proj_axis.xaxis[br+1])<=x_pix_size:
                     keep_event = True
                 if keep_event:
                     x_count_array[br] += hist_map_data.waxis[bx,by,0]
@@ -1793,7 +2005,7 @@ def PlotCountProjection(fig,label_z,logE_min,logE_max,hist_map_data,hist_map_bkg
 
             for br in range(0,len(y_proj_axis.xaxis)-1):
                 keep_event = False
-                if abs(bin_dec-y_proj_axis.xaxis[br])<=y_pix_size and abs(bin_dec-y_proj_axis.xaxis[br+1])<=y_pix_size: 
+                if abs(bin_dec-y_proj_axis.xaxis[br])<=y_pix_size and abs(bin_dec-y_proj_axis.xaxis[br+1])<=y_pix_size:
                     keep_event = True
                 if keep_event:
                     y_count_array[br] += hist_map_data.waxis[bx,by,0]
@@ -1813,7 +2025,7 @@ def PlotCountProjection(fig,label_z,logE_min,logE_max,hist_map_data,hist_map_bkg
     bottom, height = 0.12, 0.6
     bottom_h = bottom+height+0.03
     left_h = left+width+0.03
-     
+
     # Set up the geometry of the three plots
     rect_temperature = [left, bottom, width, height] # dimensions of temp plot
     rect_histx = [left, bottom_h, width, 0.20] # dimensions of x-histogram
@@ -2053,7 +2265,7 @@ def PlotSkyMap(fig,label_z,logE_min,logE_max,hist_map_input,plotname,roi_x=[],ro
     ymin = hist_map.yaxis.min()
     ymax = hist_map.yaxis.max()
 
-    other_stars, other_star_type, other_star_coord = GetGammaSourceInfo() 
+    other_stars, other_star_type, other_star_coord = GetGammaSourceInfo()
 
     if coordinate_type == 'galactic':
         for star in range(0,len(other_stars)):
@@ -2095,13 +2307,13 @@ def PlotSkyMap(fig,label_z,logE_min,logE_max,hist_map_input,plotname,roi_x=[],ro
                        (0.5, 0.2, 0.2),     # At value 2 (scaled to 0.5) -> dark red (start of positive)
                        (0.75, 1.0, 1.0),    # At some value > 2 -> red
                        (1.0, 1.0, 1.0)],     # At largest value -> yellow
-    
+
              'green': [(0.0, 1.0, 1.0),     # White (G=1)
                        (0.5, 0.0, 0.0),     # Black (G=0)
                        (0.5, 0.0, 0.0),     # Dark red (G=0)
                        (0.75, 0.0, 0.0),    # Red (G=0)
                        (1.0, 1.0, 1.0)],     # Yellow (G=1)
-    
+
              'blue':  [(0.0, 1.0, 1.0),     # White (B=1)
                        (0.5, 0.0, 0.0),     # Black (B=0)
                        (0.5, 0.0, 0.0),     # Dark red (B=0)
@@ -2190,7 +2402,7 @@ def GetFluxCalibration(energy):
         return 0.
 
 def make_significance_map(data_sky_map,bkgd_sky_map,significance_sky_map,excess_sky_map,syst_sky_map=None):
-  
+
     skymap_bins = len(data_sky_map.xaxis)-1
 
     for idx_x in range(0,skymap_bins):
@@ -2205,7 +2417,7 @@ def make_significance_map(data_sky_map,bkgd_sky_map,significance_sky_map,excess_
             excess_sky_map.waxis[idx_x,idx_y,0] = (data-bkgd)
 
 def make_flux_map(incl_sky_map,data_sky_map,bkgd_sky_map,flux_sky_map,flux_err_sky_map,flux_syst_sky_map,avg_energy,delta_energy,syst_sky_map=None):
-  
+
     skymap_bins = len(data_sky_map.xaxis)-1
 
     norm_content_max = np.max(incl_sky_map.waxis[:,:,0])
@@ -2265,12 +2477,12 @@ def GetRadialProfile(hist_flux_skymap,hist_error_skymap,hist_syst_skymap,roi_x,r
                 bin_dec = 0.5*(hist_flux_skymap.yaxis[by]+hist_flux_skymap.yaxis[by+1])
                 keep_event = False
                 distance = pow(pow(bin_ra-roi_x[0],2) + pow(bin_dec-roi_y[0],2),0.5)
-                if distance<radial_axis.xaxis[br+1] and distance>=radial_axis.xaxis[br]: 
+                if distance<radial_axis.xaxis[br+1] and distance>=radial_axis.xaxis[br]:
                     keep_event = True
                 if use_excl:
                     for roi in range(0,len(excl_roi_x)):
                         excl_distance = pow(pow(bin_ra-excl_roi_x[roi],2) + pow(bin_dec-excl_roi_y[roi],2),0.5)
-                        #if excl_distance<excl_roi_r[roi]: 
+                        #if excl_distance<excl_roi_r[roi]:
                         #    keep_event = False
                 if keep_event:
                     pixel_array[br] += 1.*pix_size
@@ -2312,12 +2524,12 @@ def GetRegionIntegral(hist_flux_skymap,roi_x,roi_y,roi_r,excl_roi_x,excl_roi_y,e
             keep_event = False
             for roi in range(0,len(roi_x)):
                 distance = pow(pow(bin_ra-roi_x[roi],2) + pow(bin_dec-roi_y[roi],2),0.5)
-                if distance<roi_r[roi]: 
+                if distance<roi_r[roi]:
                     keep_event = True
             if use_excl:
                 for roi in range(0,len(excl_roi_x)):
                     excl_distance = pow(pow(bin_ra-excl_roi_x[roi],2) + pow(bin_dec-excl_roi_y[roi],2),0.5)
-                    if excl_distance<excl_roi_r[roi]: 
+                    if excl_distance<excl_roi_r[roi]:
                         keep_event = False
             if keep_event:
                 flux_sum += hist_flux_skymap.waxis[bx,by,0]
@@ -2441,7 +2653,7 @@ def GetHawcDiffusionFluxJ1908():
 def flux_lhaaso_wcda_j1908_func(x):
     # TeV^{-1}cm^{-2}s^{-1}
     # https://arxiv.org/pdf/2305.17030.pdf
-    Flux_N0 = 7.97 
+    Flux_N0 = 7.97
     Gamma_index = 2.42
     return Flux_N0*pow(10,-13)*pow(x*1./3000.,-Gamma_index)
 
@@ -3031,7 +3243,7 @@ def DefineRegionOfInterest(src_name,src_ra,src_dec,coordinate_type='icrs'):
         #region_x += [287.45138775]
         #region_y += [5.06731983]
         #region_r += [0.2]
-    
+
         #region_name = ('east','SS 433 east')
         #region_x += [288.38690451]
         #region_y += [5.00610516]
@@ -3079,7 +3291,7 @@ def DefineRegionOfInterest(src_name,src_ra,src_dec,coordinate_type='icrs'):
         #region_r += [0.25]
 
     elif 'SS433' in src_name:
-    
+
         region_name = ('3HWC','3HWC')
         region_x += [287.05]
         region_y += [6.39]
@@ -3089,19 +3301,19 @@ def DefineRegionOfInterest(src_name,src_ra,src_dec,coordinate_type='icrs'):
         #region_x += [288.0833333]
         #region_y += [4.9166667]
         #region_r += [0.2]
-    
+
         #region_name = ('west','SS 433 west')
         #region_x += [287.45138775]
         #region_y += [5.06731983]
         #region_r += [0.2]
-    
+
         #region_name = ('east','SS 433 east')
         #region_x += [288.38690451]
         #region_y += [5.00610516]
         #region_r += [0.2]
 
     elif 'PSR_J2030_p4415' in src_name:
-    
+
         region_name = ('1p5deg','1.5-deg diameter')
         region_x += [src_x]
         region_y += [src_y]
@@ -3350,12 +3562,12 @@ def build_radial_symmetric_model(radial_symmetry_sky_map,on_radial_axis,on_profi
                 break
 
 def PrintSpectralDataForNaima(energy_axis,src_flux,src_flux_err,data_name):
-    
-    energy_mean_log = [] 
-    energy_mean = [] 
-    energy_edge_lo = [] 
-    energy_edge_hi = [] 
-    flux_mean = [] 
+
+    energy_mean_log = []
+    energy_mean = []
+    energy_edge_lo = []
+    energy_edge_hi = []
+    flux_mean = []
     flux_error = []
     ul = []
     for eb in range(0,len(energy_axis)):
@@ -3378,7 +3590,7 @@ def PrintSpectralDataForNaima(energy_axis,src_flux,src_flux_err,data_name):
         print ('%.4f %.4f %.4f %.2e %.2e %s'%(energy_mean[eb],energy_edge_lo[eb],energy_edge_hi[eb],flux_mean[eb],flux_error[eb],0))
     print ('=======================================================')
 
-    qfile = open("output_plots/naima_%s.dat"%(data_name),"w") 
+    qfile = open("output_plots/naima_%s.dat"%(data_name),"w")
     qfile.write("# %ECSV 0.9\n")
     qfile.write("# ---\n")
     qfile.write("# datatype:\n")
@@ -3397,7 +3609,7 @@ def PrintSpectralDataForNaima(energy_axis,src_flux,src_flux_err,data_name):
     qfile.write("#   - cl: {value: 0.95}\n")
     for eb in range(0,len(energy_axis)):
         qfile.write('%.2f %.2f %.2f %.2e %.2e %s\n'%(energy_mean[eb],energy_edge_lo[eb],energy_edge_hi[eb],flux_mean[eb],flux_error[eb],0))
-    qfile.close() 
+    qfile.close()
 
 def ConvertRaDecToGalactic(ra, dec):
     my_sky = SkyCoord(ra*astropy_unit.deg, dec*astropy_unit.deg, frame='icrs')
@@ -3457,9 +3669,9 @@ def GetSlicedDataCubeMap(map_file, sky_map, vel_low, vel_up):
 
     image_data_reduced_z = np.full((image_data[:, :, vel_idx_start].shape),0.)
     for idx in range(vel_idx_start,vel_idx_end):
-        world_coord = wcs.all_pix2world(idx,0,0,1) 
+        world_coord = wcs.all_pix2world(idx,0,0,1)
         velocity = world_coord[0]
-        world_coord = wcs.all_pix2world(idx+1,0,0,1) 
+        world_coord = wcs.all_pix2world(idx+1,0,0,1)
         velocity_next = world_coord[0]
         delta_vel = velocity_next - velocity
         image_data_reduced_z += image_data[:, :, idx]*delta_vel
@@ -3514,7 +3726,7 @@ def GetSlicedDataCubeMapCGPS(map_file, sky_map, vel_low, vel_up):
     all_pix_lat = []
     for idx_x in range(0,image_data.shape[2]-1):
         for idx_y in range(0,image_data.shape[3]-1):
-            world_coord = wcs.all_pix2world(idx_x,idx_y,0,0,0) 
+            world_coord = wcs.all_pix2world(idx_x,idx_y,0,0,0)
             lon = world_coord[0]
             lat = world_coord[1]
             all_pix_lon += [lon]
@@ -3537,9 +3749,9 @@ def GetSlicedDataCubeMapCGPS(map_file, sky_map, vel_low, vel_up):
 
     image_data_reduced_z = np.full((image_data[0,vel_idx_start, :, :].shape),0.)
     for idx in range(vel_idx_start,vel_idx_end):
-        world_coord = wcs.all_pix2world(0,0,idx,0,0) 
+        world_coord = wcs.all_pix2world(0,0,idx,0,0)
         velocity = world_coord[2]
-        world_coord = wcs.all_pix2world(0,0,idx+1,0,0) 
+        world_coord = wcs.all_pix2world(0,0,idx+1,0,0)
         velocity_next = world_coord[2]
         delta_vel = velocity_next - velocity
         image_data_reduced_z += image_data[0,idx, :, :]
@@ -3592,9 +3804,9 @@ def GetSlicedDataCubeMapGALFA(map_file, sky_map, vel_low, vel_up):
 
     image_data_reduced_z = np.full((image_data[vel_idx_start, :, :].shape),0.)
     for idx in range(vel_idx_start,vel_idx_end):
-        world_coord = wcs.all_pix2world(0,0,idx,1) 
+        world_coord = wcs.all_pix2world(0,0,idx,1)
         velocity = world_coord[2]
-        world_coord = wcs.all_pix2world(0,0,idx+1,1) 
+        world_coord = wcs.all_pix2world(0,0,idx+1,1)
         velocity_next = world_coord[2]
         delta_vel = velocity_next - velocity
         image_data_reduced_z += image_data[idx, :, :]*delta_vel
@@ -3611,7 +3823,7 @@ def GetSlicedDataCubeMapGALFA(map_file, sky_map, vel_low, vel_up):
     all_pix_lat = []
     for idx_x in range(0,image_data.shape[1]-1):
         for idx_y in range(0,image_data.shape[2]-1):
-            world_coord = wcs.all_pix2world(idx_x,idx_y,0,0) 
+            world_coord = wcs.all_pix2world(idx_x,idx_y,0,0)
             lon = world_coord[0]
             lat = world_coord[1]
             all_pix_lon += [lon]
@@ -3761,15 +3973,15 @@ def build_skymap(
         runlist,
         off_runlist,
         mimic_runlist,
-        onoff, 
-        incl_sky_map, 
-        data_sky_map, 
-        fit_sky_map, 
-        syst_sky_map, 
-        data_xyoff_map, 
-        fit_xyoff_map, 
-        init_xyoff_map, 
-        data_xyvar_map, 
+        onoff,
+        incl_sky_map,
+        data_sky_map,
+        fit_sky_map,
+        syst_sky_map,
+        data_xyoff_map,
+        fit_xyoff_map,
+        init_xyoff_map,
+        data_xyvar_map,
         syst_xyoff_map,
         total_data_sky_map,
         total_bkgd_sky_map,
@@ -3838,7 +4050,7 @@ def build_skymap(
     ratio_xyoff_map = []
     for logE in range(0,logE_nbins):
         ratio_xyoff_map += [MyArray3D(x_bins=xoff_bins[logE],start_x=xoff_start,end_x=xoff_end,y_bins=yoff_bins[logE],start_y=yoff_start,end_y=yoff_end,z_bins=gcut_bins,start_z=gcut_start,end_z=gcut_end)]
-    
+
     for logE in range(0,logE_nbins):
         incl_sky_map[logE].reset()
         data_sky_map[logE].reset()
@@ -4129,7 +4341,7 @@ def build_skymap(
 
         run_number = runlist[run]
         print (f'analyzing {run_count}/{len(runlist)} runs...')
-    
+
         print (f'analyzing run {run_number}')
         rootfile_name = f'{smi_input}/{run_number}.anasum.root'
         print (rootfile_name)
@@ -4137,7 +4349,7 @@ def build_skymap(
             print (f'file does not exist.')
             continue
         run_count += 1
-    
+
         InputFile = ROOT.TFile(rootfile_name)
         TreeName = f'run_{run_number}/stereo/pointingDataReduced'
         TelTree = InputFile.Get(TreeName)
@@ -4304,11 +4516,11 @@ def build_skymap(
                             syst_sky_map[logE].fill(Xsky,Ysky,0.5,weight=-1.*sr_syst*syst_scaling[logE])
                     elif GammaCut<1.:
                         data_sky_map[logE].fill(Xsky,Ysky,GammaCut)
-    
+
         print(f'memory usage (current,peak) = {tracemalloc.get_traced_memory()}')
 
         InputFile.Close()
-  
+
     tracemalloc.stop()
     if exposure_hours>0.:
         avg_tel_elev = avg_tel_elev/exposure_hours
