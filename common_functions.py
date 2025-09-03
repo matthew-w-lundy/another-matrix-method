@@ -987,7 +987,10 @@ def build_big_camera_matrix(source_name,src_ra,src_dec,smi_input,runlist,max_run
 
     Returns
     ----------
-
+        big_elevation (float)                   - Average Elevation
+        big_exposure_time (list)                - List of exposures
+        big_matrix_fullspec (array)             - Array of components (1 row for each run)
+        big_mask_matrix_fullspec (array)        - Array of Masked values (1 row for each run)
     """
     if (reco != 'GEO') & (package != 'VEGAS'): # not good should make exception
         print(f'You input reco = {reco}, but are not using VEGAS!')
