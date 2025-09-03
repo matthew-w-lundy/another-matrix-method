@@ -1,6 +1,5 @@
 import subprocess
 import os, sys
-import ROOT
 import numpy as np
 import pickle
 
@@ -26,6 +25,8 @@ src_ra = float(sys.argv[2])
 src_dec = float(sys.argv[3])
 onoff = sys.argv[4]
 input_epoch = sys.argv[5]  # 'V4', 'V5' or 'V6'
+package = sys.argv[6]
+reco = sys.argv[7]
 print(f"source_name = {source_name}, onoff = {onoff}, input_epoch = {input_epoch}")
 
 off_runlist = []
@@ -64,6 +65,8 @@ for entry in range(0, len(off_runlist)):
         off_runlist[entry],
         max_runs=1e10,
         is_bkgd=True,
+        package=package,
+        reco=reco,
     )
 
     output_filename = f"{smi_output}/{ana_dir}/big_off_matrix_{source_name}_{onoff}_{input_epoch}_{cr_tag}_{bin_tag}_batch{entry}.pkl"

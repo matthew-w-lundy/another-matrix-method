@@ -1,7 +1,18 @@
 import os
 import sys
 import subprocess
+import argparse
 
+#Command Line Arguement
+parser = argparse.ArgumentParser(description="A script that generates matrix processing scripts.")
+parser.add_argument("--condapath", type=str,default='/nevis/ged/data/rshang/my_conda_envs/root_env', help="Path to your conda enviroment")
+parser.add_argument("--package",  type=str, default='ED', help="Select ED/VEGAS package")
+parser.add_argument("--reco",  type=str, default='ED', help="Reconstruction Method. Only VEGAS (ITM/GEO)")
+
+args = parser.parse_args()
+
+
+#Importing System Enviroment Variables
 smi_runlist = os.environ.get("SMI_RUNLIST")
 smi_input = os.environ.get("SMI_INPUT")
 smi_output = os.environ.get("SMI_OUTPUT")
@@ -13,6 +24,7 @@ bin_tag = os.environ.get("BIN_TAG")
 cr_tag = os.environ.get("CR_TAG")
 ana_dir = os.environ.get("ANA_DIR")
 
+#Setting paths
 script_dir = f"{smi_dir}/run"
 job_dir = f"{smi_dir}/run/{sky_tag}"
 print(f"job_dir = {job_dir}")
@@ -134,26 +146,26 @@ for s in range(0, len(input_params)):
     file = open("%s/save_mtx_%s_%s.sh" % (job_dir, source, onoff), "w")
     file.write("cd %s\n" % (smi_dir))
     file.write(f"conda init\n")
-    file.write(f"conda activate /nevis/ged/data/rshang/my_conda_envs/root_env\n")
+    file.write(f"conda activate {args.condapath}\n")
     file.write(
-        f'python3 save_big_matrices.py "{source}" {src_ra} {src_dec} "{onoff}" "V6"\n'
+        f'python3 save_big_matrices.py "{source}" {src_ra} {src_dec} "{onoff}" "V6" "{args.package}" "{args.reco}"\n'
     )
     file.write(
-        f'python3 save_big_matrices.py "{source}" {src_ra} {src_dec} "{onoff}" "V5"\n'
+        f'python3 save_big_matrices.py "{source}" {src_ra} {src_dec} "{onoff}" "V5" "{args.package}" "{args.reco}"\n'
     )
     file.write(
-        f'python3 save_big_matrices.py "{source}" {src_ra} {src_dec} "{onoff}" "V4"\n'
+        f'python3 save_big_matrices.py "{source}" {src_ra} {src_dec} "{onoff}" "V4" "{args.package}" "{args.reco}"\n'
     )
     if onoff == "ON" and (not "Crab" in source):
         for mimic in range(1, n_mimic + 1):
             file.write(
-                f'python3 save_big_matrices.py "{source}" {src_ra} {src_dec} "MIMIC{mimic}" "V6"\n'
+                f'python3 save_big_matrices.py "{source}" {src_ra} {src_dec} "MIMIC{mimic}" "V6" "{args.package}" "{args.reco}"\n'
             )
             file.write(
-                f'python3 save_big_matrices.py "{source}" {src_ra} {src_dec} "MIMIC{mimic}" "V5"\n'
+                f'python3 save_big_matrices.py "{source}" {src_ra} {src_dec} "MIMIC{mimic}" "V5" "{args.package}" "{args.reco}"\n'
             )
             file.write(
-                f'python3 save_big_matrices.py "{source}" {src_ra} {src_dec} "MIMIC{mimic}" "V4"\n'
+                f'python3 save_big_matrices.py "{source}" {src_ra} {src_dec} "MIMIC{mimic}" "V4" "{args.package}" "{args.reco}"\n'
             )
     file.close()
 
@@ -180,7 +192,7 @@ for s in range(0, len(input_params)):
     file = open("%s/eigenvtr_%s_%s.sh" % (job_dir, source, onoff), "w")
     file.write("cd %s\n" % (smi_dir))
     file.write(f"conda init\n")
-    file.write(f"conda activate /nevis/ged/data/rshang/my_conda_envs/root_env\n")
+    file.write(f"conda activate {args.condapath}\n")
     file.write("export MKL_NUM_THREADS=1\n")
     file.write("export NUMEXPR_NUM_THREADS=1\n")
     file.write("export OMP_NUM_THREADS=1\n")
@@ -228,7 +240,7 @@ for s in range(0, len(input_params)):
     file = open("%s/skymap_%s_%s.sh" % (job_dir, source, onoff), "w")
     file.write("cd %s\n" % (smi_dir))
     file.write(f"conda init\n")
-    file.write(f"conda activate /nevis/ged/data/rshang/my_conda_envs/root_env\n")
+    file.write(f"conda activate {args.condapath}\n")
     file.write(f'python3 build_eigenvectors.py "{source}" "{onoff}" "V6"\n')
     file.write(f'python3 build_eigenvectors.py "{source}" "{onoff}" "V5"\n')
     file.write(f'python3 build_eigenvectors.py "{source}" "{onoff}" "V4"\n')
